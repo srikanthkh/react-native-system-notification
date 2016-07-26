@@ -118,18 +118,25 @@ public class Notification {
      */
     public android.app.Notification build() {
         android.support.v7.app.NotificationCompat.Builder notificationBuilder = new android.support.v7.app.NotificationCompat.Builder(context);
+        int largeIconResId;
+        largeIconResId = context.getResources().getIdentifier("ic_launcher", "mipmap", context.getPackageName());
 
         notificationBuilder
             .setContentTitle(attributes.subject)
             .setContentText(attributes.message)
-            .setSmallIcon(context.getResources().getIdentifier(attributes.smallIcon, "mipmap", context.getPackageName()))
+            .setSmallIcon(context.getResources().getIdentifier("ic_launcher", "mipmap", context.getPackageName()))
             .setAutoCancel(attributes.autoClear)
             .setContentIntent(getContentIntent());
 
         if (attributes.priority != null) {
             notificationBuilder.setPriority(attributes.priority);
         }
+        
+        Bitmap largeIconBitmap = BitmapFactory.decodeResource(context.getResources(), largeIconResId);
 
+        if ( largeIconResId != 0 && (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP ) ) {
+            notificationBuilder.setLargeIcon(largeIconBitmap);
+        }
         if(attributes.inboxStyle){
 
             android.support.v7.app.NotificationCompat.InboxStyle inboxStyle = new android.support.v7.app.NotificationCompat.InboxStyle();
