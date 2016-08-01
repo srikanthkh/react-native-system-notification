@@ -4,6 +4,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Build;
 import android.os.SystemClock;
+import android.os.Bundle;
 import android.app.PendingIntent;
 import android.app.AlarmManager;
 import android.app.NotificationManager;
@@ -16,13 +17,19 @@ import android.net.Uri;
 import java.lang.System;
 import java.util.HashMap;
 import java.util.Map;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.io.InputStream;
+import java.io.BufferedInputStream;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonParser;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
 
 import io.neson.react.notification.NotificationAttributes;
 import io.neson.react.notification.NotificationEventReceiver;
 import io.neson.react.notification.NotificationPublisher;
-
 import android.support.v7.app.NotificationCompat;
 import android.text.Html;
 import android.util.Base64;
@@ -113,13 +120,135 @@ public class Notification {
         return this;
     }
 
+    // as opposed to just bailing out
+    private android.app.Notification createErrorNotif(android.support.v7.app.NotificationCompat.Builder notificationBuilder) {
+      notificationBuilder
+        .setContentTitle("ERROR")
+        .setContentText("Something went wrong trying to create the tray notif, check the logs");
+      return notificationBuilder.build();
+    }
+
+    private android.app.Notification createMessageNotification(android.support.v7.app.NotificationCompat.Builder notificationBuilder, JsonObject notifData) {
+      // fetch the relevant data or die
+      try {
+        JsonPrimitive messageBodyPrimitive = notifData.getAsJsonPrimitive("body");
+        String messageBody = messageBodyPrimitive.getAsString();
+        JsonPrimitive messageNamePrimitive = notifData.getAsJsonPrimitive("name");
+        String messageName = messageNamePrimitive.getAsString();
+        String messageText = messageName + " said " + messageBody;
+        notificationBuilder
+          .setContentTitle("New message")
+          .setContentText(messageText);
+        return notificationBuilder.build();
+      } catch (Exception e) {
+        Log.i("XKCD", "missing data, or whatever: " + e.toString());
+        return this.createErrorNotif(notificationBuilder);
+      }
+
+    }
+
+    private android.app.Notification createCallNotif(android.support.v7.app.NotificationCompat.Builder notificationBuilder) {
+      notificationBuilder
+        .setContentTitle("BLAH")
+        .setContentText("BLUH")
+        .addAction(0, "ANSWER", getCallIntent())
+        .addAction(0, "DENY", getDenyIntent());
+      return notificationBuilder.build();
+
+    }
+
     /**
      * Build the notification.
      */
     public android.app.Notification build() {
         android.support.v7.app.NotificationCompat.Builder notificationBuilder = new android.support.v7.app.NotificationCompat.Builder(context);
-        int largeIconResId;
-        largeIconResId = context.getResources().getIdentifier("ic_launcher", "mipmap", context.getPackageName());
+        // HERE
+        // grab the profile URL form the PN
+        // fetch the image from the network
+        // jam it into largeIcon
+        int largeIconResId = 0;
+        URL largeIconURL = null;
+        HttpURLConnection fetchProfilePictureConnection = null;
+        Bitmap largeIconBitmap = null;
+        JsonObject attributesObject = null;
+
+        String notifType = null;
+
+        JsonParser jsonParser = new JsonParser();
+        Log.i("ReactSystemNotification", "PAYLOAD" + attributes.payload);
+
+        // set the small icon
+        // TODO set it to the ones Brenda sent
+        notificationBuilder.setSmallIcon(context.getResources().getIdentifier("ic_launcher", "mipmap", context.getPackageName()));
+
+        // parse the payload attributes or fail with an error notif
+        try {
+          attributesObject = (JsonObject)jsonParser.parse(attributes.payload);
+        } catch (Exception e) {
+          Log.i("XKCD", "Error when parsing payload attributes" + e.toString());
+          return createErrorNotif(notificationBuilder);
+        }
+        // fetch the avatar pic, or set the default one
+        try {
+          JsonPrimitive avatarJsonPrimitive = attributesObject.getAsJsonPrimitive("avatarUrl");
+          String avatarUrl = avatarJsonPrimitive.getAsString();
+          largeIconURL = new URL(avatarUrl);
+          fetchProfilePictureConnection = (HttpURLConnection) largeIconURL.openConnection();
+          InputStream in = new BufferedInputStream(fetchProfilePictureConnection.getInputStream());
+          largeIconBitmap = BitmapFactory.decodeStream(in);
+          notificationBuilder.setLargeIcon(largeIconBitmap);
+        } catch (Exception e) {
+          Log.i("XKCD", "Error when setting avatar pic: " + e.toString());
+          largeIconResId = context.getResources().getIdentifier("ic_launcher", "mipmap", context.getPackageName());
+          largeIconBitmap = BitmapFactory.decodeResource(context.getResources(), largeIconResId);
+          notificationBuilder.setLargeIcon(largeIconBitmap);
+        }
+
+        // find type of notif or fail and die
+        try {
+          JsonPrimitive typeJsonPrimitive = attributesObject.getAsJsonPrimitive("type");
+          notifType = typeJsonPrimitive.getAsString();
+        } catch (Exception e) {
+          Log.i("XKCD", "Error when finding type of notif: " + e.toString());
+          return createErrorNotif(notificationBuilder);
+        }
+
+        if (notifType.equals("offer")) {
+          notificationBuilder
+            .addAction(0, "Answer", getCallIntent())
+            .addAction(0, "Deny", getDenyIntent());
+        }
+
+        /*
+        if (notifType.equals("offer")) {
+          Log.i("XKCD", "CREATING CALL NOTIF");
+          return this.createCallNotif(notificationBuilder);
+        } else if (notifType.equals("message")) {
+          Log.i("XKCD", "CREATING MESSAGE NOTIF");
+          return this.createMessageNotification(notificationBuilder, attributesObject);
+        } else if (null != notifType) {
+          String imgoinginsane = "insane";
+          Log.i("XKCD", "i am going mad mike: " + imgoinginsane);
+          Log.i("XKCD", "wtf is that notificationType: " + notifType);
+          return this.createErrorNotif(notificationBuilder);
+        }
+        */
+
+          // here's a call
+          // 07-27 15:15:34.370  1286  1391 I ReactSystemNotification: PAYLOAD{"from":"blep","to":"gotadirectory","type":"offer"}
+          // here's a bye
+          // 07-27 15:15:44.396  1286  1407 I ReactSystemNotification: PAYLOAD{"from":"blep","to":"gotadirectory","type":"bye"}
+          // here's a message
+          // 07-27 15:18:51.782  1286  1579 I ReactSystemNotification: PAYLOAD{"secs":79355,"name":null,"from":"blep","id":10,"to":"gotadirectory","lang":"en","body":"blop","cid":"cid_7906e1ab","ts":"2016-07-27T22:18:50.986Z"}
+          // what I'm gonna do here
+          // is add a type or some shit to that payload
+          // have one "createNotification" method per type
+          // call the right one depending
+          // they will all be pretty simple except for the call and bye ones
+          // which will involve, respectively, the app, and removing a tray notif
+          // I will also pull the profile pic url of that data
+          // meaning I'l have to modify the server-side code to add that
+
 
         notificationBuilder
             .setContentTitle(attributes.subject)
@@ -128,11 +257,11 @@ public class Notification {
             .setAutoCancel(attributes.autoClear)
             .setContentIntent(getContentIntent());
 
+        // I have a hauch that all this shit should run even with my custom notifs
         if (attributes.priority != null) {
             notificationBuilder.setPriority(attributes.priority);
         }
-        
-        Bitmap largeIconBitmap = BitmapFactory.decodeResource(context.getResources(), largeIconResId);
+
 
         if ( largeIconResId != 0 && (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP ) ) {
             notificationBuilder.setLargeIcon(largeIconBitmap);
@@ -239,6 +368,8 @@ public class Notification {
         if (attributes.sound != null) {
             notificationBuilder.setSound(Uri.parse(attributes.sound));
         }
+
+        Log.i("XKCD", "AM I EXECUTED");
 
         return notificationBuilder.build();
     }
@@ -388,6 +519,38 @@ public class Notification {
 
     private SharedPreferences getSharedPreferences () {
         return (SharedPreferences) context.getSharedPreferences(io.neson.react.notification.NotificationManager.PREFERENCES_KEY, Context.MODE_PRIVATE);
+    }
+
+    private PendingIntent getCallIntent() {
+        // Intent intent = new Intent(context, NotificationEventReceiver.class);
+        Intent intent = new Intent("com.mobile.CallPushNotifIntent");
+        Bundle bundle = new Bundle();
+        JsonObject notificationBody = new JsonObject();
+        notificationBody.addProperty("type", "offer");
+        bundle.putString("notificationBody", notificationBody.toString());
+        intent.putExtra("bundle", bundle);
+        Log.i("XKCD", "CREATING CALL INTENT");
+        return PendingIntent.getBroadcast(context, id, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
+    private PendingIntent getDenyIntent() {
+        // Intent intent = new Intent(context, NotificationEventReceiver.class);
+        // Intent intent = new Intent("com.mobile.CallPushNotifIntent");
+        Intent intent = new Intent("com.oney.gcm.GCMReceiveNotification");
+        Bundle bundle = new Bundle();
+        JsonObject notificationBody = new JsonObject();
+        notificationBody.addProperty("type", "deny");
+        bundle.putString("notificationBody", notificationBody.toString());
+        // intent.putExtra("type", "deny");
+        intent.putExtra("bundle", bundle);
+        Log.i("XKCD", "CREATING CALL INTENT");
+        return PendingIntent.getBroadcast(context, id, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
+    private PendingIntent getByeIntent() {
+        Intent intent = new Intent(context, NotificationEventReceiver.class);
+        intent.putExtra("what_am_I_doing", "bye");
+        return PendingIntent.getBroadcast(context, id, intent, PendingIntent.FLAG_UPDATE_CURRENT);
     }
 
     private PendingIntent getContentIntent() {
