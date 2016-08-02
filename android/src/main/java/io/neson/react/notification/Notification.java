@@ -369,9 +369,13 @@ public class Notification {
             notificationBuilder.setSound(Uri.parse(attributes.sound));
         }
 
-        Log.i("XKCD", "AM I EXECUTED");
-
-        return notificationBuilder.build();
+        if (notifType.equals("offer")){
+          android.app.Notification notif = notificationBuilder.build();
+          notif.flags |= android.app.Notification.FLAG_INSISTENT;
+          return notif;
+        }else{
+          return notificationBuilder.build();
+        }
     }
 
     /**
