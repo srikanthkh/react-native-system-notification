@@ -13,6 +13,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.support.annotation.Nullable;
 import android.net.Uri;
+import android.webkit.CookieManager;
 
 import java.lang.System;
 import java.util.HashMap;
@@ -122,38 +123,38 @@ public class Notification {
 
     // as opposed to just bailing out
     private android.app.Notification createErrorNotif(android.support.v7.app.NotificationCompat.Builder notificationBuilder) {
-      notificationBuilder
+        notificationBuilder
         .setContentTitle("ERROR")
         .setContentText("Something went wrong trying to create the tray notif, check the logs");
-      return notificationBuilder.build();
+        return notificationBuilder.build();
     }
 
     private android.app.Notification createMessageNotification(android.support.v7.app.NotificationCompat.Builder notificationBuilder, JsonObject notifData) {
-      // fetch the relevant data or die
-      try {
+        // fetch the relevant data or die
+        try {
         JsonPrimitive messageBodyPrimitive = notifData.getAsJsonPrimitive("body");
         String messageBody = messageBodyPrimitive.getAsString();
         JsonPrimitive messageNamePrimitive = notifData.getAsJsonPrimitive("name");
         String messageName = messageNamePrimitive.getAsString();
         String messageText = messageName + " said " + messageBody;
         notificationBuilder
-          .setContentTitle("New message")
-          .setContentText(messageText);
+            .setContentTitle("New message")
+            .setContentText(messageText);
         return notificationBuilder.build();
-      } catch (Exception e) {
+        } catch (Exception e) {
         Log.i("XKCD", "missing data, or whatever: " + e.toString());
         return this.createErrorNotif(notificationBuilder);
-      }
+        }
 
     }
 
     private android.app.Notification createCallNotif(android.support.v7.app.NotificationCompat.Builder notificationBuilder) {
-      notificationBuilder
+        notificationBuilder
         .setContentTitle("BLAH")
         .setContentText("BLUH")
         .addAction(0, "ANSWER", getCallIntent())
         .addAction(0, "DENY", getDenyIntent());
-      return notificationBuilder.build();
+        return notificationBuilder.build();
 
     }
 
@@ -183,71 +184,81 @@ public class Notification {
 
         // parse the payload attributes or fail with an error notif
         try {
-          attributesObject = (JsonObject)jsonParser.parse(attributes.payload);
+            attributesObject = (JsonObject)jsonParser.parse(attributes.payload);
         } catch (Exception e) {
-          Log.i("XKCD", "Error when parsing payload attributes" + e.toString());
-          return createErrorNotif(notificationBuilder);
+            Log.i("XKCD", "Error when parsing payload attributes" + e.toString());
+            return createErrorNotif(notificationBuilder);
         }
         // fetch the avatar pic, or set the default one
         try {
-          JsonPrimitive avatarJsonPrimitive = attributesObject.getAsJsonPrimitive("avatarUrl");
-          String avatarUrl = avatarJsonPrimitive.getAsString();
-          largeIconURL = new URL(avatarUrl);
-          fetchProfilePictureConnection = (HttpURLConnection) largeIconURL.openConnection();
-          InputStream in = new BufferedInputStream(fetchProfilePictureConnection.getInputStream());
-          largeIconBitmap = BitmapFactory.decodeStream(in);
-          notificationBuilder.setLargeIcon(largeIconBitmap);
+            CookieManager cookieManager = CookieManager.getInstance();
+            if(!cookieManager.hasCookies()) {
+                    throw new Exception("No cookies in cookie manager");
+            }
+            JsonPrimitive avatarJsonPrimitive = attributesObject.getAsJsonPrimitive("avatarUrl");
+            String avatarUrl = avatarJsonPrimitive.getAsString();
+
+            largeIconURL = new URL(avatarUrl);
+            String vidaoCookies = cookieManager.getCookie(largeIconURL.getHost());
+
+            fetchProfilePictureConnection = (HttpURLConnection) largeIconURL.openConnection();
+            fetchProfilePictureConnection.addRequestProperty("Cookie", vidaoCookies);
+
+            InputStream in = new BufferedInputStream(fetchProfilePictureConnection.getInputStream());
+            largeIconBitmap = BitmapFactory.decodeStream(in);
+
+            notificationBuilder.setLargeIcon(largeIconBitmap);
         } catch (Exception e) {
-          Log.i("XKCD", "Error when setting avatar pic: " + e.toString());
-          largeIconResId = context.getResources().getIdentifier("ic_launcher", "mipmap", context.getPackageName());
-          largeIconBitmap = BitmapFactory.decodeResource(context.getResources(), largeIconResId);
-          notificationBuilder.setLargeIcon(largeIconBitmap);
+            Log.i("XKCD", "Error when setting avatar pic: " + e.toString());
+            largeIconResId = context.getResources().getIdentifier("ic_launcher", "mipmap", context.getPackageName());
+            largeIconBitmap = BitmapFactory.decodeResource(context.getResources(), largeIconResId);
+            notificationBuilder.setLargeIcon(largeIconBitmap);
         }
 
         // find type of notif or fail and die
         try {
-          JsonPrimitive typeJsonPrimitive = attributesObject.getAsJsonPrimitive("type");
-          notifType = typeJsonPrimitive.getAsString();
+            JsonPrimitive typeJsonPrimitive = attributesObject.getAsJsonPrimitive("type");
+            notifType = typeJsonPrimitive.getAsString();
         } catch (Exception e) {
-          Log.i("XKCD", "Error when finding type of notif: " + e.toString());
-          return createErrorNotif(notificationBuilder);
+            Log.i("XKCD", "Error when finding type of notif: " + e.toString());
+            return createErrorNotif(notificationBuilder);
         }
 
         if (notifType.equals("offer")) {
-          notificationBuilder
+            notificationBuilder
             .addAction(0, "Answer", getCallIntent())
             .addAction(0, "Deny", getDenyIntent());
         }
 
         /*
         if (notifType.equals("offer")) {
-          Log.i("XKCD", "CREATING CALL NOTIF");
-          return this.createCallNotif(notificationBuilder);
+            Log.i("XKCD", "CREATING CALL NOTIF");
+            return this.createCallNotif(notificationBuilder);
         } else if (notifType.equals("message")) {
-          Log.i("XKCD", "CREATING MESSAGE NOTIF");
-          return this.createMessageNotification(notificationBuilder, attributesObject);
+            Log.i("XKCD", "CREATING MESSAGE NOTIF");
+            return this.createMessageNotification(notificationBuilder, attributesObject);
         } else if (null != notifType) {
-          String imgoinginsane = "insane";
-          Log.i("XKCD", "i am going mad mike: " + imgoinginsane);
-          Log.i("XKCD", "wtf is that notificationType: " + notifType);
-          return this.createErrorNotif(notificationBuilder);
+            String imgoinginsane = "insane";
+            Log.i("XKCD", "i am going mad mike: " + imgoinginsane);
+            Log.i("XKCD", "wtf is that notificationType: " + notifType);
+            return this.createErrorNotif(notificationBuilder);
         }
         */
 
-          // here's a call
-          // 07-27 15:15:34.370  1286  1391 I ReactSystemNotification: PAYLOAD{"from":"blep","to":"gotadirectory","type":"offer"}
-          // here's a bye
-          // 07-27 15:15:44.396  1286  1407 I ReactSystemNotification: PAYLOAD{"from":"blep","to":"gotadirectory","type":"bye"}
-          // here's a message
-          // 07-27 15:18:51.782  1286  1579 I ReactSystemNotification: PAYLOAD{"secs":79355,"name":null,"from":"blep","id":10,"to":"gotadirectory","lang":"en","body":"blop","cid":"cid_7906e1ab","ts":"2016-07-27T22:18:50.986Z"}
-          // what I'm gonna do here
-          // is add a type or some shit to that payload
-          // have one "createNotification" method per type
-          // call the right one depending
-          // they will all be pretty simple except for the call and bye ones
-          // which will involve, respectively, the app, and removing a tray notif
-          // I will also pull the profile pic url of that data
-          // meaning I'l have to modify the server-side code to add that
+            // here's a call
+            // 07-27 15:15:34.370    1286    1391 I ReactSystemNotification: PAYLOAD{"from":"blep","to":"gotadirectory","type":"offer"}
+            // here's a bye
+            // 07-27 15:15:44.396    1286    1407 I ReactSystemNotification: PAYLOAD{"from":"blep","to":"gotadirectory","type":"bye"}
+            // here's a message
+            // 07-27 15:18:51.782    1286    1579 I ReactSystemNotification: PAYLOAD{"secs":79355,"name":null,"from":"blep","id":10,"to":"gotadirectory","lang":"en","body":"blop","cid":"cid_7906e1ab","ts":"2016-07-27T22:18:50.986Z"}
+            // what I'm gonna do here
+            // is add a type or some shit to that payload
+            // have one "createNotification" method per type
+            // call the right one depending
+            // they will all be pretty simple except for the call and bye ones
+            // which will involve, respectively, the app, and removing a tray notif
+            // I will also pull the profile pic url of that data
+            // meaning I'l have to modify the server-side code to add that
 
 
         notificationBuilder
@@ -316,8 +327,8 @@ public class Notification {
         // if bigText is not null, it have priority over bigStyleImageBase64
         if (attributes.bigText != null) {
             notificationBuilder
-              .setStyle(new android.support.v7.app.NotificationCompat.BigTextStyle()
-              .bigText(attributes.bigText));
+                .setStyle(new android.support.v7.app.NotificationCompat.BigTextStyle()
+                .bigText(attributes.bigText));
         }
         else if (attributes.bigStyleImageBase64 != null) {
 
@@ -342,7 +353,7 @@ public class Notification {
         }
 
         if (attributes.color != null) {
-          notificationBuilder.setColor(Color.parseColor(attributes.color));
+            notificationBuilder.setColor(Color.parseColor(attributes.color));
         }
 
         if (attributes.subText != null) {
@@ -370,11 +381,11 @@ public class Notification {
         }
 
         if (notifType.equals("offer")){
-          android.app.Notification notif = notificationBuilder.build();
-          notif.flags |= android.app.Notification.FLAG_INSISTENT;
-          return notif;
-        }else{
-          return notificationBuilder.build();
+            android.app.Notification notif = notificationBuilder.build();
+            notif.flags |= android.app.Notification.FLAG_INSISTENT;
+            return notif;
+        } else {
+            return notificationBuilder.build();
         }
     }
 
